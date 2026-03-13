@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Environment Variables
+.env
+
+# Streamlit
+.streamlit/
+
+# Langchain / Vector DB
+db/
+cache/
+
+# Data files (optional - if PDFs are large)
+data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+.env
