@@ -9,7 +9,13 @@ from modules.vectorstore import get_vectorstore, add_documents_to_db
 from modules.retriever import get_retriever
 from modules.chatbot import create_llm, generate_response
 from langchain_community.document_loaders import PyPDFLoader
-from modules.chatbot import generate_suggested_questions
+
+
+def shorten_name(name, length=18):
+    if len(name) > length:
+        return name[:length] + "..."
+    return name
+
 
 
 # ------------------ CONFIG ------------------
@@ -66,13 +72,16 @@ with sidebar_container:
 
         col1, col2 = st.columns([5,1])
 
-        if col1.button(pdf_name, use_container_width=True):
+        display_name = shorten_name(pdf_name)
+
+        if col1.button(display_name, help=pdf_name, use_container_width=True):
 
             st.session_state.current_pdf = pdf_name
             st.session_state.vectorstore = st.session_state.pdf_files[pdf_name]
             st.session_state.retriever = get_retriever(
                 st.session_state.vectorstore
             )
+
 
         with col2:
             with st.popover("⋮"):
@@ -169,15 +178,9 @@ if uploaded_file:
         st.session_state.chat_store[uploaded_file.name] = []
         st.session_state.current_pdf = uploaded_file.name
 
-        questions = generate_suggested_questions(
-            st.session_state.llm,
-            st.session_state.retriever
-        )
-
-        st.session_state.suggested_questions = questions
-
         st.session_state.vectorstore = vectorstore
         st.session_state.retriever = get_retriever(vectorstore)
+
 
         st.success("PDF uploaded successfully!")
 
@@ -263,19 +266,6 @@ if st.session_state.current_pdf:
     if col4.button("🔍 Important Details"):
         st.session_state.auto_prompt = "What are the most important details in this document?"
 
-    # AI Generated Questions
-    if "suggested_questions" in st.session_state and st.session_state.suggested_questions:
-
-        st.markdown("#### 🤖 AI Suggested Questions")
-
-        cols = st.columns(len(st.session_state.suggested_questions))
-
-        for i, q in enumerate(st.session_state.suggested_questions):
-
-            if cols[i].button(q, key=f"ai_q_{i}"):
-
-                st.session_state.auto_prompt = q
-                st.rerun()
 # ---------------- INPUT (ALWAYS LAST) ----------------
 
 prompt = st.chat_input("Ask something about the document...")
@@ -314,12 +304,4 @@ if prompt and st.session_state.retriever:
 
             message_placeholder.markdown(full_text)
 
-            # SOURCE BUTTON
-            page = st.session_state.get("last_source_page")
-
-            if page:
-
-                if st.button(f"📄 Go to Source Page {page}", key=f"page_btn_{page}"):
-
-                    st.session_state.jump_page = page
-                    st.rerun()
+         
