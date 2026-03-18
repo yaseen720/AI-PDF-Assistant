@@ -9,3 +9,5 @@ tiktoken
 sentence-transformers
 openai
 HuggingFace
+chromadb
+streamlit-pdf-viewer
