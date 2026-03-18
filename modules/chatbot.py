@@ -47,6 +47,10 @@ def generate_response(llm, retriever, query):
             doc.page_content for doc in docs if hasattr(doc, "page_content")
         )
 
+        # Force detect links
+        context += "\n\nAlso check for LinkedIn and GitHub links in the resume even if hidden."
+
+
         # Ensure chat history exists
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
@@ -58,14 +62,70 @@ def generate_response(llm, retriever, query):
         for q, a in recent_history:
             history_text += f"User: {q}\nAssistant: {a}\n"
 
+        # Detect resume mode
+        resume_mode = any(word in query.lower() for word in ["resume", "cv", "candidate"])
+
+        if "summarize" in query.lower():
+            system_instruction = "Summarize the document clearly in short."
+
+        elif "key points" in query.lower():
+            system_instruction = "Extract important key bullet points from the document."
+
+        elif "topics" in query.lower():
+            system_instruction = "List main topics discussed in the document."
+
+        elif "details" in query.lower():
+            system_instruction = "Extract important detailed information from the document."
+
+        elif "skills" in query.lower():
+            system_instruction = "Extract all technical and soft skills from the resume."
+
+        elif "summary" in query.lower():
+            system_instruction = "Give a professional short summary of the candidate."
+
+        elif "analyze" in query.lower() or "resume" in query.lower():
+            system_instruction = """
+        Analyze the resume and extract:
+
+        - Name
+        - Contact Info
+        - Skills
+        - Education
+        - Experience
+        - Projects
+        - LinkedIn (if available)
+        - GitHub (if available)
+
+
+        Return the answer in clean, human-readable format.
+
+        Use headings and bullet points like:
+
+        Name: 
+        Contact:
+        Skills:
+        - skill 1
+        - skill 2
+
+        Do NOT return JSON or code format.
+
+        """
+
+        else:
+            system_instruction = """
+        You are a helpful AI assistant.
+
+        Use ONLY the provided context to answer.
+
+        If not found, say:
+        "I couldn't find that in the document."
+        """
+
+
+        
         # Prompt
         prompt = f"""
-You are a helpful AI assistant.
-
-Use ONLY the provided context to answer the question.
-
-If the answer is not in the context, say:
-"I couldn't find that in the document."
+{system_instruction}
 
 Conversation History:
 {history_text}
@@ -76,6 +136,7 @@ Context:
 Question:
 {query}
 """
+
 
         response = llm.invoke(prompt)
 

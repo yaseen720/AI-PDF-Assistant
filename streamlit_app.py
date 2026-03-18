@@ -11,6 +11,7 @@ from modules.chatbot import create_llm, generate_response
 from langchain_community.document_loaders import PyPDFLoader
 
 
+
 def shorten_name(name, length=18):
     if len(name) > length:
         return name[:length] + "..."
@@ -181,11 +182,42 @@ if uploaded_file:
         st.session_state.vectorstore = vectorstore
         st.session_state.retriever = get_retriever(vectorstore)
 
-
         st.success("PDF uploaded successfully!")
 
     else:
         st.session_state.current_pdf = uploaded_file.name
+
+
+    # ✅ SMART ACTIONS (YAHAN)
+    st.markdown("### ⚡ Smart Actions")
+    col1, col2, col3, col4 = st.columns(4)
+
+    if col1.button("📄 Summarize"):
+        st.session_state.auto_prompt = "Summarize this document."
+
+    if col2.button("🧠 Key Points"):
+        st.session_state.auto_prompt = "Key points?"
+
+    if col3.button("📊 Topics"):
+        st.session_state.auto_prompt = "Main topics?"
+
+    if col4.button("🔍 Details"):
+        st.session_state.auto_prompt = "Important details?"
+
+
+    # ✅ RESUME ACTIONS (YAHAN)
+    st.markdown("### 📄 Resume Actions")
+    col1, col2, col3 = st.columns(3)
+
+    if col1.button("🧠 Analyze Resume"):
+        st.session_state.auto_prompt = "Analyze this resume."
+
+    if col2.button("💼 Extract Skills"):
+        st.session_state.auto_prompt = "Extract skills from this resume."
+
+    if col3.button("📊 Candidate Summary"):
+        st.session_state.auto_prompt = "Summarize this candidate."
+
 
 
 # ------------------ SPLIT SCREEN LAYOUT ------------------
@@ -266,30 +298,54 @@ if st.session_state.current_pdf:
     if col4.button("🔍 Important Details"):
         st.session_state.auto_prompt = "What are the most important details in this document?"
 
-# ---------------- INPUT (ALWAYS LAST) ----------------
+# ---------------- CHAT HISTORY DISPLAY ----------------
 
-prompt = st.chat_input("Ask something about the document...")
+if "chat_history" in st.session_state:
+    for q, a in st.session_state.chat_history:
 
-# check if suggested button was clicked
+        with st.chat_message("user"):
+            st.markdown(q)
+
+        with st.chat_message("assistant"):
+            st.markdown(a)
+
+if "stop_generation" not in st.session_state:
+    st.session_state.stop_generation = False
+
+if st.button("⛔ Stop"):
+    st.session_state.stop_generation = True
+
+# Chat controls
+col1, col2 = st.columns([6,1])
+
+with col2:
+    if st.button("⛔"):
+        st.session_state.stop_generation = True
+
+
+# ---------------- INPUT ----------------
+
+query = st.chat_input("Ask something about your PDF...")
+
+# Button se input aaye
 if "auto_prompt" in st.session_state:
-    prompt = st.session_state.auto_prompt
+    query = st.session_state.auto_prompt
     del st.session_state.auto_prompt
 
-if prompt and st.session_state.retriever:
+if query and st.session_state.retriever:
 
-    pdf_name = st.session_state.current_pdf
-
+    # Show user message
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(query)
 
+    # Generate response
     with st.chat_message("assistant"):
-
-        with st.spinner("Generating..."):
+        with st.spinner("🤖 AI is thinking..."):
 
             response = generate_response(
                 st.session_state.llm,
                 st.session_state.retriever,
-                prompt
+                query
             )
 
             message_placeholder = st.empty()
@@ -297,11 +353,16 @@ if prompt and st.session_state.retriever:
 
             for char in response:
 
+                if st.session_state.stop_generation:
+                    break
+
                 full_text += char
                 message_placeholder.markdown(full_text)
-
                 time.sleep(0.002)
 
-            message_placeholder.markdown(full_text)
+            # reset after complete
+            st.session_state.stop_generation = False
 
-         
+
+
+
