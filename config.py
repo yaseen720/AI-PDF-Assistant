@@ -1,7 +1,13 @@
 # config.py
 
 # ---- LLM CONFIG ----
-MODEL_NAME = "phi3"
+# Provider: "ollama", "gemini" or "openai"
+MODEL_PROVIDER = "ollama"
+OLLAMA_MODEL = "phi3"
+GEMINI_MODEL = "gemini-1.0"
+OPENAI_MODEL = "gpt-4o-mini"
+
+MODEL_NAME = OLLAMA_MODEL
 TEMPERATURE = 0
 
 # ---- EMBEDDING MODEL ----

@@ -11,14 +11,6 @@ from modules.chatbot import create_llm, generate_response
 from langchain_community.document_loaders import PyPDFLoader
 
 
-
-def shorten_name(name, length=18):
-    if len(name) > length:
-        return name[:length] + "..."
-    return name
-
-
-
 # ------------------ CONFIG ------------------
 
 st.set_page_config(page_title="PDF AI Assistant", layout="wide")
@@ -53,99 +45,106 @@ if "llm" not in st.session_state:
 if "stop_generation" not in st.session_state:
     st.session_state.stop_generation = False
 
+if "show_suggested_questions" not in st.session_state:
+    st.session_state.show_suggested_questions = False
+
 
 # ------------------ HELPER ------------------
 
-def save_chat(pdf_name):
-    with open(f"{CACHE_FOLDER}/{pdf_name}_chat.pkl", "wb") as f:
-        pickle.dump(st.session_state.chat_store[pdf_name], f)
+def shorten_name(name, length=18):
+    if len(name) > length:
+        return name[:length] + "..."
+    return name
+
+
+def apply_rename(pdf_name, rename_key):
+    new_name = st.session_state.get(rename_key, "").strip()
+    if new_name and new_name != pdf_name and pdf_name in st.session_state.pdf_files:
+        old_file = os.path.join(DATA_FOLDER, pdf_name)
+        new_file = os.path.join(DATA_FOLDER, new_name)
+        if os.path.exists(old_file):
+            os.rename(old_file, new_file)
+
+        st.session_state.pdf_files[new_name] = st.session_state.pdf_files.pop(pdf_name)
+        st.session_state.chat_store[new_name] = st.session_state.chat_store.pop(pdf_name)
+        if st.session_state.current_pdf == pdf_name:
+            st.session_state.current_pdf = new_name
+
+        st.session_state[f"show_menu_{pdf_name}"] = False
+        st.session_state[rename_key] = new_name
+
+
+def delete_pdf(pdf_name):
+    if pdf_name in st.session_state.pdf_files:
+        del st.session_state.pdf_files[pdf_name]
+    if pdf_name in st.session_state.chat_store:
+        del st.session_state.chat_store[pdf_name]
+    file_path = os.path.join(DATA_FOLDER, pdf_name)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    if st.session_state.current_pdf == pdf_name:
+        st.session_state.current_pdf = None
+    st.session_state[f"show_menu_{pdf_name}"] = False
 
 
 # ------------------ SIDEBAR ------------------
 
+if st.sidebar.button("➕ New Chat", key="new_chat"):
+    st.session_state.current_pdf = None
+    st.session_state.vectorstore = None
+    st.session_state.retriever = None
+    st.session_state.show_suggested_questions = False
+
 st.sidebar.markdown("## 📂 Document History")
 
-sidebar_container = st.sidebar.container()
+for pdf_name in list(st.session_state.pdf_files.keys()):
 
-with sidebar_container:
+    col1, col2 = st.sidebar.columns([5,1])
 
-    for pdf_name in list(st.session_state.pdf_files.keys()):
+    display_name = shorten_name(pdf_name)
 
-        col1, col2 = st.columns([5,1])
+    if col1.button(display_name, help=pdf_name, use_container_width=True, key=f"pdf_{pdf_name}"):
+        st.session_state.current_pdf = pdf_name
+        st.session_state.vectorstore = st.session_state.pdf_files[pdf_name]
+        st.session_state.retriever = get_retriever(st.session_state.vectorstore)
 
-        display_name = shorten_name(pdf_name)
+    if col2.button("⋯", key=f"menu_{pdf_name}", help="File actions", use_container_width=True):
+        key = f"show_menu_{pdf_name}"
+        st.session_state[key] = not st.session_state.get(key, False)
 
-        if col1.button(display_name, help=pdf_name, use_container_width=True):
+    if st.session_state.get(f"show_menu_{pdf_name}", False):
+        rename_input_key = f"rename_input_{pdf_name}"
+        if rename_input_key not in st.session_state:
+            st.session_state[rename_input_key] = pdf_name
 
-            st.session_state.current_pdf = pdf_name
-            st.session_state.vectorstore = st.session_state.pdf_files[pdf_name]
-            st.session_state.retriever = get_retriever(
-                st.session_state.vectorstore
-            )
+        new_name = st.sidebar.text_input(
+            f"Rename {pdf_name}",
+            value=st.session_state.get(rename_input_key, pdf_name),
+            key=rename_input_key,
+            on_change=apply_rename,
+            args=(pdf_name, rename_input_key),
+        )
+
+        if st.sidebar.button("Delete", key=f"delete_{pdf_name}"):
+            delete_pdf(pdf_name)
 
 
-        with col2:
-            with st.popover("⋮"):
-
-                new_name = st.text_input(
-                    "Rename PDF",
-                    key=f"rename_{pdf_name}"
-                )
-
-                if st.button("Save Name", key=f"save_{pdf_name}"):
-
-                    if new_name and new_name != pdf_name:
-
-                        st.session_state.pdf_files[new_name] = \
-                            st.session_state.pdf_files[pdf_name]
-
-                        st.session_state.chat_store[new_name] = \
-                            st.session_state.chat_store.get(pdf_name, [])
-
-                        del st.session_state.pdf_files[pdf_name]
-
-                        if pdf_name in st.session_state.chat_store:
-                            del st.session_state.chat_store[pdf_name]
-
-                        if st.session_state.current_pdf == pdf_name:
-                            st.session_state.current_pdf = new_name
-
-                        st.rerun()
-
-                if st.button("🗑 Delete PDF", key=f"delete_{pdf_name}"):
-
-                    del st.session_state.pdf_files[pdf_name]
-
-                    if pdf_name in st.session_state.chat_store:
-                        del st.session_state.chat_store[pdf_name]
-
-                    file_path = os.path.join(DATA_FOLDER, pdf_name)
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-
-                    if st.session_state.current_pdf == pdf_name:
-                        st.session_state.current_pdf = None
-
-                    st.rerun()
 
 
 st.sidebar.markdown("---")
 
-# Clear button
-if st.sidebar.button(
-    "🗑 Clear All PDFs",
-    use_container_width=True,
-    key="clear_all_btn"
-):
+if st.sidebar.button("🗑 Clear All PDFs", use_container_width=True):
 
     st.session_state.pdf_files.clear()
     st.session_state.chat_store.clear()
     st.session_state.current_pdf = None
+    st.session_state.vectorstore = None
+    st.session_state.retriever = None
+    st.session_state.show_suggested_questions = False
 
     for file in os.listdir(DATA_FOLDER):
         os.remove(os.path.join(DATA_FOLDER, file))
 
-    st.rerun()
 
 
 # ------------------ MAIN ------------------
@@ -188,181 +187,107 @@ if uploaded_file:
         st.session_state.current_pdf = uploaded_file.name
 
 
-    # ✅ SMART ACTIONS (YAHAN)
-    st.markdown("### ⚡ Smart Actions")
-    col1, col2, col3, col4 = st.columns(4)
+# ---------------- ACTION BUTTONS ----------------
 
-    if col1.button("📄 Summarize"):
-        st.session_state.auto_prompt = "Summarize this document."
+if st.session_state.current_pdf:
 
-    if col2.button("🧠 Key Points"):
-        st.session_state.auto_prompt = "Key points?"
+    # Suggested Questions (moved to chat section for first time only)
+    st.session_state.show_suggested_questions = True
 
-    if col3.button("📊 Topics"):
-        st.session_state.auto_prompt = "Main topics?"
-
-    if col4.button("🔍 Details"):
-        st.session_state.auto_prompt = "Important details?"
-
-
-    # ✅ RESUME ACTIONS (YAHAN)
-    st.markdown("### 📄 Resume Actions")
-    col1, col2, col3 = st.columns(3)
-
-    if col1.button("🧠 Analyze Resume"):
-        st.session_state.auto_prompt = "Analyze this resume."
-
-    if col2.button("💼 Extract Skills"):
-        st.session_state.auto_prompt = "Extract skills from this resume."
-
-    if col3.button("📊 Candidate Summary"):
-        st.session_state.auto_prompt = "Summarize this candidate."
-
-
-
-# ------------------ SPLIT SCREEN LAYOUT ------------------
-
-import base64
-
-col_chat, col_pdf = st.columns([2,1])
 
 # ---------------- PDF PREVIEW ----------------
 
-with col_pdf:
+if st.session_state.current_pdf:
 
     st.subheader("📄 Document Preview")
 
-    if st.session_state.current_pdf:
+    pdf_path = os.path.join(DATA_FOLDER, st.session_state.current_pdf)
 
-        pdf_path = os.path.join(DATA_FOLDER, st.session_state.current_pdf)
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
 
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
+    base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
 
-        base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+    pdf_display = f"""
+    <iframe
+    src="data:application/pdf;base64,{base64_pdf}"
+    width="100%"
+    height="500">
+    </iframe>
+    """
 
-        page = st.session_state.get("jump_page", 1)
-
-        pdf_display = f"""
-        <iframe
-        src="data:application/pdf;base64,{base64_pdf}#page={page}"
-        width="100%"
-        height="500"
-        style="border-radius:10px;border:1px solid #ddd;">
-        </iframe>
-        """
-
-        st.markdown(pdf_display, unsafe_allow_html=True)
+    st.markdown(pdf_display, unsafe_allow_html=True)
 
 
 # ---------------- CHAT ----------------
 
-with col_chat:
-
-    if st.session_state.current_pdf:
-
-        pdf_name = st.session_state.current_pdf
-
-        if pdf_name not in st.session_state.chat_store:
-            st.session_state.chat_store[pdf_name] = []
-
-        st.subheader(f"Chatting with: {pdf_name}")
-
-        # CHAT HISTORY
-        for user_msg, bot_msg in st.session_state.chat_store[pdf_name]:
-
-            with st.chat_message("user"):
-                st.markdown(user_msg)
-
-            with st.chat_message("assistant"):
-                st.markdown(bot_msg)
-
-# ---------------- SUGGESTED QUESTIONS ----------------
-
 if st.session_state.current_pdf:
 
-    st.markdown("### 💡 Suggested Questions")
+    pdf_name = st.session_state.current_pdf
 
-    # Default buttons
-    col1, col2, col3, col4 = st.columns(4)
+    if pdf_name not in st.session_state.chat_store:
+        st.session_state.chat_store[pdf_name] = []
 
-    if col1.button("📄 Summarize PDF"):
-        st.session_state.auto_prompt = "Summarize this document."
+    st.subheader(f"Chatting with: {pdf_name}")
 
-    if col2.button("🧠 Key Points"):
-        st.session_state.auto_prompt = "What are the key points in this document?"
+    if st.session_state.show_suggested_questions and len(st.session_state.chat_store[pdf_name]) == 0:
+        st.markdown("### 💡 Suggested Questions")
+        col1, col2, col3, col4 = st.columns(4)
 
-    if col3.button("📊 Main Topics"):
-        st.session_state.auto_prompt = "What are the main topics discussed?"
+        if col1.button("📄 Summarize PDF", key="q1"):
+            st.session_state.auto_prompt = "Summarize this document."
 
-    if col4.button("🔍 Important Details"):
-        st.session_state.auto_prompt = "What are the most important details in this document?"
+        if col2.button("🧠 Key Points", key="q2"):
+            st.session_state.auto_prompt = "Give key points of this document."
 
-# ---------------- CHAT HISTORY DISPLAY ----------------
+        if col3.button("📊 Main Topics", key="q3"):
+            st.session_state.auto_prompt = "Explain the main topics."
 
-if "chat_history" in st.session_state:
-    for q, a in st.session_state.chat_history:
+        if col4.button("🔍 Important Details", key="q4"):
+            st.session_state.auto_prompt = "Give important details from the document."
+
+        st.session_state.show_suggested_questions = False
+
+    for user_msg, bot_msg in st.session_state.chat_store[pdf_name]:
 
         with st.chat_message("user"):
-            st.markdown(q)
+            st.markdown(user_msg)
 
         with st.chat_message("assistant"):
-            st.markdown(a)
-
-if "stop_generation" not in st.session_state:
-    st.session_state.stop_generation = False
-
-if st.button("⛔ Stop"):
-    st.session_state.stop_generation = True
-
-# Chat controls
-col1, col2 = st.columns([6,1])
-
-with col2:
-    if st.button("⛔"):
-        st.session_state.stop_generation = True
+            st.markdown(bot_msg)
 
 
 # ---------------- INPUT ----------------
 
 query = st.chat_input("Ask something about your PDF...")
 
-# Button se input aaye
+
 if "auto_prompt" in st.session_state:
     query = st.session_state.auto_prompt
     del st.session_state.auto_prompt
 
+
 if query and st.session_state.retriever:
 
-    # Show user message
     with st.chat_message("user"):
         st.markdown(query)
 
-    # Generate response
     with st.chat_message("assistant"):
-        with st.spinner("🤖 AI is thinking..."):
+        loading = st.empty()
 
-            response = generate_response(
-                st.session_state.llm,
-                st.session_state.retriever,
-                query
-            )
+        # Animated generating dots
+        for i in range(8):
+            dot_count = i % 4
+            loading.info("🤖 Generating" + "." * dot_count)
+            time.sleep(0.2)
 
-            message_placeholder = st.empty()
-            full_text = ""
+        response = generate_response(
+            st.session_state.llm,
+            st.session_state.retriever,
+            query
+        )
 
-            for char in response:
+        loading.empty()
+        st.markdown(response)
 
-                if st.session_state.stop_generation:
-                    break
-
-                full_text += char
-                message_placeholder.markdown(full_text)
-                time.sleep(0.002)
-
-            # reset after complete
-            st.session_state.stop_generation = False
-
-
-
-
+    st.session_state.chat_store.setdefault(st.session_state.current_pdf, []).append((query, response))

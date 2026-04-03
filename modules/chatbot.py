@@ -1,19 +1,56 @@
 from langchain_community.chat_models import ChatOllama
-from config import MODEL_NAME, TEMPERATURE
+
+# heat-proof for LangChain version mismatches
+try:
+    from langchain.chat_models import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None
+
+try:
+    from langchain.chat_models import GoogleGemini
+except ImportError:
+    GoogleGemini = None
+
+try:
+    from langchain_openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+from config import MODEL_PROVIDER, OLLAMA_MODEL, GEMINI_MODEL, OPENAI_MODEL, TEMPERATURE
 import streamlit as st
 
 
 def create_llm():
-    """
-    Initializes the local LLM using Ollama.
-    """
-
+    """Create and return an LLM object based on config MODEL_PROVIDER."""
     try:
-        llm = ChatOllama(
-            model=MODEL_NAME,
-            temperature=TEMPERATURE
-        )
-        print(f"[INFO] LLM '{MODEL_NAME}' loaded successfully.")
+        provider = MODEL_PROVIDER.lower().strip()
+
+        if provider == "ollama":
+            llm = ChatOllama(
+                model=OLLAMA_MODEL,
+                temperature=TEMPERATURE,
+                num_predict=256,
+                top_k=40,
+                top_p=0.9,
+            )
+
+        elif provider == "gemini":
+            if GoogleGemini is None:
+                raise ImportError("GoogleGemini is not installed. Run pip install langchain[google-gemini] or google-ai.")
+            llm = GoogleGemini(model=GEMINI_MODEL, temperature=TEMPERATURE)
+
+        elif provider == "openai":
+            if ChatOpenAI is not None:
+                llm = ChatOpenAI(model_name=OPENAI_MODEL, temperature=TEMPERATURE)
+            elif OpenAI is not None:
+                llm = OpenAI(model_name=OPENAI_MODEL, temperature=TEMPERATURE)
+            else:
+                raise ImportError("OpenAI chat model class not found. Install langchain-openai or upgrade langchain.")
+
+        else:
+            raise ValueError(f"Unknown MODEL_PROVIDER '{MODEL_PROVIDER}'. Use 'ollama', 'gemini', or 'openai'.")
+
+        print(f"[INFO] {provider.capitalize()} LLM loaded ({MODEL_PROVIDER}).")
         return llm
 
     except Exception as e:
@@ -34,7 +71,11 @@ def generate_response(llm, retriever, query):
 
     try:
         # Retrieve relevant documents
-        docs = retriever.invoke(query)
+        try:
+            docs = retriever.invoke(query)
+        except AttributeError:
+            # Fallback if retriever doesn't have invoke method
+            docs = retriever.similarity_search(query) if hasattr(retriever, 'similarity_search') else retriever.get_relevant_documents(query)
 
         if not docs:
             return "No relevant content found in this PDF."
@@ -44,8 +85,11 @@ def generate_response(llm, retriever, query):
 
         # Build context
         context = "\n\n".join(
-            doc.page_content for doc in docs if hasattr(doc, "page_content")
+            doc.page_content if hasattr(doc, "page_content") else str(doc) for doc in docs
         )
+
+        if not context.strip():
+            return "No relevant content found in this PDF."
 
         # Force detect links
         context += "\n\nAlso check for LinkedIn and GitHub links in the resume even if hidden."
@@ -84,48 +128,29 @@ def generate_response(llm, retriever, query):
             system_instruction = "Give a professional short summary of the candidate."
 
         elif "analyze" in query.lower() or "resume" in query.lower():
-            system_instruction = """
-        Analyze the resume and extract:
+            system_instruction = """Analyze the resume and extract:
+- Name
+- Contact Info
+- Skills
+- Education
+- Experience
+- Projects
+- LinkedIn (if available)
+- GitHub (if available)
 
-        - Name
-        - Contact Info
-        - Skills
-        - Education
-        - Experience
-        - Projects
-        - LinkedIn (if available)
-        - GitHub (if available)
-
-
-        Return the answer in clean, human-readable format.
-
-        Use headings and bullet points like:
-
-        Name: 
-        Contact:
-        Skills:
-        - skill 1
-        - skill 2
-
-        Do NOT return JSON or code format.
-
-        """
+Return the answer in clean, human-readable format.
+Use headings and bullet points.
+Do NOT return JSON or code format."""
 
         else:
-            system_instruction = """
-        You are a helpful AI assistant.
-
-        Use ONLY the provided context to answer.
-
-        If not found, say:
-        "I couldn't find that in the document."
-        """
+            system_instruction = """You are a helpful AI assistant.
+Use ONLY the provided context to answer.
+If not found, say: "I couldn't find that in the document.\""""
 
 
         
         # Prompt
-        prompt = f"""
-{system_instruction}
+        prompt = f"""{system_instruction}
 
 Conversation History:
 {history_text}
@@ -134,9 +159,7 @@ Context:
 {context}
 
 Question:
-{query}
-"""
-
+{query}"""
 
         response = llm.invoke(prompt)
 
@@ -146,11 +169,17 @@ Question:
         else:
             answer = str(response)
 
+        if not answer or answer.strip() == "":
+            return "Unable to generate a response. Please try again."
+
         # Save memory
         st.session_state.chat_history.append((query, answer))
 
         return answer
 
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         print(f"[ERROR] Failed to generate response: {e}")
-        return "Error generating response."
+        print(f"[TRACEBACK] {error_details}")
+        return f"Error generating response: {str(e)}"
