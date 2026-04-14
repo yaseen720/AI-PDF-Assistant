@@ -1,13 +1,15 @@
 streamlit
 langchain
 langchain-community
-langchain-openai
+langchain-groq
 faiss-cpu
 pypdf
 python-dotenv
 tiktoken
 sentence-transformers
-openai
 HuggingFace
 chromadb
+python-docx
+pytesseract
+pillow
 streamlit-pdf-viewer

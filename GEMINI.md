@@ -26,7 +26,6 @@ The PDF AI Assistant leverages Retrieval-Augmented Generation (RAG) to provide a
 ### Switching providers
 - `MODEL_PROVIDER = "ollama"` for local Ollama
 - `MODEL_PROVIDER = "gemini"` for Google Gemini
-- `MODEL_PROVIDER = "openai"` for OpenAI
 
 ## Project Structure
 

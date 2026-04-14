@@ -11,10 +11,9 @@ except ImportError:
     FAISS = None
 
 try:
-    from langchain_community.embeddings import HuggingFaceEmbeddings, OpenAIEmbeddings
+    from langchain_community.embeddings import HuggingFaceEmbeddings
 except ImportError:
     HuggingFaceEmbeddings = None
-    OpenAIEmbeddings = None
 
 
 def get_vectorstore(db_path):
@@ -31,14 +30,6 @@ def get_vectorstore(db_path):
             embeddings = None
     else:
         embeddings = None
-
-    if embeddings is None and OpenAIEmbeddings is not None:
-        try:
-            print("[WARNING] Falling back to OpenAI embeddings.")
-            embeddings = OpenAIEmbeddings()
-        except Exception as ex:
-            print(f"[WARNING] OpenAIEmbeddings init failed: {ex}")
-            embeddings = None
 
     if embeddings is None:
         print("[WARNING] Falling back to DummyEmbeddings. This will work but results may be low-quality.")

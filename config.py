@@ -1,20 +1,20 @@
 # config.py
 
 # ---- LLM CONFIG ----
-# Provider: "ollama", "gemini" or "openai"
-MODEL_PROVIDER = "ollama"
+# Provider: "groq" (for deployment)
+MODEL_PROVIDER = "groq"
 OLLAMA_MODEL = "phi3"
 GEMINI_MODEL = "gemini-1.0"
-OPENAI_MODEL = "gpt-4o-mini"
+GROQ_MODEL = "llama3-8b-8192"
 
-MODEL_NAME = OLLAMA_MODEL
+MODEL_NAME = GROQ_MODEL
 TEMPERATURE = 0
 
 # ---- EMBEDDING MODEL ----
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # ---- TEXT SPLITTING ----
-CHUNK_SIZE = 500
+CHUNK_SIZE = 300  # Reduced for lower memory usage
 CHUNK_OVERLAP = 50
 
 # ---- PATHS ----

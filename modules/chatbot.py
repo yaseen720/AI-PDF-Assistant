@@ -1,22 +1,7 @@
-from langchain_community.chat_models import ChatOllama
+import os
+from langchain_groq import ChatGroq
 
-# heat-proof for LangChain version mismatches
-try:
-    from langchain.chat_models import ChatOpenAI
-except ImportError:
-    ChatOpenAI = None
-
-try:
-    from langchain.chat_models import GoogleGemini
-except ImportError:
-    GoogleGemini = None
-
-try:
-    from langchain_openai import OpenAI
-except ImportError:
-    OpenAI = None
-
-from config import MODEL_PROVIDER, OLLAMA_MODEL, GEMINI_MODEL, OPENAI_MODEL, TEMPERATURE
+from config import MODEL_PROVIDER, GROQ_MODEL, TEMPERATURE
 import streamlit as st
 
 
@@ -25,30 +10,18 @@ def create_llm():
     try:
         provider = MODEL_PROVIDER.lower().strip()
 
-        if provider == "ollama":
-            llm = ChatOllama(
-                model=OLLAMA_MODEL,
-                temperature=TEMPERATURE,
-                num_predict=256,
-                top_k=40,
-                top_p=0.9,
+        if provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set.")
+            llm = ChatGroq(
+                model=GROQ_MODEL,
+                api_key=api_key,
+                temperature=TEMPERATURE
             )
 
-        elif provider == "gemini":
-            if GoogleGemini is None:
-                raise ImportError("GoogleGemini is not installed. Run pip install langchain[google-gemini] or google-ai.")
-            llm = GoogleGemini(model=GEMINI_MODEL, temperature=TEMPERATURE)
-
-        elif provider == "openai":
-            if ChatOpenAI is not None:
-                llm = ChatOpenAI(model_name=OPENAI_MODEL, temperature=TEMPERATURE)
-            elif OpenAI is not None:
-                llm = OpenAI(model_name=OPENAI_MODEL, temperature=TEMPERATURE)
-            else:
-                raise ImportError("OpenAI chat model class not found. Install langchain-openai or upgrade langchain.")
-
         else:
-            raise ValueError(f"Unknown MODEL_PROVIDER '{MODEL_PROVIDER}'. Use 'ollama', 'gemini', or 'openai'.")
+            raise ValueError(f"Unknown MODEL_PROVIDER '{MODEL_PROVIDER}'. Use 'groq'.")
 
         print(f"[INFO] {provider.capitalize()} LLM loaded ({MODEL_PROVIDER}).")
         return llm
