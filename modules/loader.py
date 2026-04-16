@@ -2,7 +2,7 @@
 
 import os
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.schema import Document
+from langchain_core.documents.base import Document
 
 DATA_FOLDER = "data"
 SUPPORTED_FILE_TYPES = [".pdf", ".docx", ".png", ".jpg", ".jpeg"]

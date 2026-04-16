@@ -5,7 +5,7 @@
 MODEL_PROVIDER = "groq"
 OLLAMA_MODEL = "phi3"
 GEMINI_MODEL = "gemini-1.0"
-GROQ_MODEL = "llama3-8b-8192"
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 MODEL_NAME = GROQ_MODEL
 TEMPERATURE = 0

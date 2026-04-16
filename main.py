@@ -27,7 +27,7 @@ os.makedirs(CACHE_FOLDER, exist_ok=True)
 # ------------------ SESSION STATE ------------------
 
 if "pdf_files" not in st.session_state:
-    st.session_state.pdf_files = {}
+    st.session_state.pdf_files = {}  # now stores db_path instead of vectorstore
 
 if "chat_store" not in st.session_state:
     st.session_state.chat_store = {}
@@ -76,7 +76,13 @@ def apply_rename(pdf_name, rename_key):
         if os.path.exists(old_file):
             os.rename(old_file, new_file)
 
-        st.session_state.pdf_files[new_name] = st.session_state.pdf_files.pop(pdf_name)
+        old_db = os.path.join(DB_DIR, pdf_name)
+        new_db = os.path.join(DB_DIR, new_name)
+        if os.path.exists(old_db):
+            os.rename(old_db, new_db)
+
+        st.session_state.pdf_files[new_name] = new_db
+        del st.session_state.pdf_files[pdf_name]
         st.session_state.chat_store[new_name] = st.session_state.chat_store.pop(pdf_name)
         if st.session_state.current_pdf == pdf_name:
             st.session_state.current_pdf = new_name
@@ -87,6 +93,10 @@ def apply_rename(pdf_name, rename_key):
 
 def delete_pdf(pdf_name):
     if pdf_name in st.session_state.pdf_files:
+        db_path = st.session_state.pdf_files[pdf_name]
+        if isinstance(db_path, str) and os.path.exists(db_path):
+            import shutil
+            shutil.rmtree(db_path)
         del st.session_state.pdf_files[pdf_name]
     if pdf_name in st.session_state.chat_store:
         del st.session_state.chat_store[pdf_name]
@@ -95,6 +105,8 @@ def delete_pdf(pdf_name):
         os.remove(file_path)
     if st.session_state.current_pdf == pdf_name:
         st.session_state.current_pdf = None
+        st.session_state.vectorstore = None
+        st.session_state.retriever = None
     st.session_state[f"show_menu_{pdf_name}"] = False
 
 
@@ -169,7 +181,11 @@ def analyze_resume(file_name):
     if file_name not in st.session_state.pdf_files:
         return "Resume not available."
 
-    retriever = get_retriever(st.session_state.pdf_files[file_name])
+    db_path = st.session_state.pdf_files[file_name]
+    if not isinstance(db_path, str):
+        return "Invalid DB path."
+    vectorstore = get_vectorstore(db_path)
+    retriever = get_retriever(vectorstore)
     prompt = (
         "You are a resume analyst. Use only the information from the resume content retrieved below.\n"
         "Extract structured data: Name, Skills, Experience, Education, Projects, LinkedIn, GitHub.\n"
@@ -241,6 +257,8 @@ if st.sidebar.button("➕ New Chat", key="new_chat"):
     st.session_state.vectorstore = None
     st.session_state.retriever = None
     st.session_state.show_suggested_questions = False
+    if "auto_prompt" in st.session_state:
+        del st.session_state.auto_prompt
 
 st.sidebar.markdown("## 📂 Document History")
 
@@ -252,8 +270,12 @@ for pdf_name in list(st.session_state.pdf_files.keys()):
 
     if col1.button(display_name, help=pdf_name, use_container_width=True, key=f"pdf_{pdf_name}"):
         st.session_state.current_pdf = pdf_name
-        st.session_state.vectorstore = st.session_state.pdf_files[pdf_name]
-        st.session_state.retriever = get_retriever(st.session_state.vectorstore)
+        db_path = st.session_state.pdf_files[pdf_name]
+        if isinstance(db_path, str):
+            st.session_state.vectorstore = get_vectorstore(db_path)
+            st.session_state.retriever = get_retriever(st.session_state.vectorstore)
+        else:
+            st.error(f"Invalid DB path for {pdf_name}")
 
     if col2.button("⋯", key=f"menu_{pdf_name}", help="File actions", use_container_width=True):
         key = f"show_menu_{pdf_name}"
@@ -282,6 +304,12 @@ st.sidebar.markdown("---")
 
 if st.sidebar.button("🗑 Clear All PDFs", use_container_width=True):
 
+    for name in st.session_state.pdf_files:
+        db_path = st.session_state.pdf_files[name]
+        if isinstance(db_path, str) and os.path.exists(db_path):
+            import shutil
+            shutil.rmtree(db_path)
+
     st.session_state.pdf_files.clear()
     st.session_state.chat_store.clear()
     st.session_state.current_pdf = None
@@ -303,38 +331,37 @@ uploaded_files = st.file_uploader(
     type=SUPPORTED_UPLOAD_TYPES,
     accept_multiple_files=True,
     help="Upload PDF, DOCX, PNG, JPG, or JPEG files.",
+    key="file_uploader",
 )
 
 if uploaded_files:
     for uploaded_file in uploaded_files:
-        if uploaded_file.name not in st.session_state.pdf_files:
-            file_path = save_uploaded_file(uploaded_file)
-            with st.spinner(f"Processing {uploaded_file.name}..."):
-                documents = load_file(file_path)
-                if not documents:
-                    st.error(f"Unable to extract text from {uploaded_file.name}.")
-                    continue
+        file_path = save_uploaded_file(uploaded_file)
+        with st.spinner(f"Processing {uploaded_file.name}..."):
+            documents = load_file(file_path)
+            if not documents:
+                st.error(f"Unable to extract text from {uploaded_file.name}.")
+                continue
 
-                chunks = split_documents(documents)
-                if not chunks:
-                    st.error(f"Failed to split {uploaded_file.name} into chunks.")
-                    continue
+            chunks = split_documents(documents)
+            if not chunks:
+                st.error(f"Failed to split {uploaded_file.name} into chunks.")
+                continue
 
-                from config import DB_DIR
-                pdf_db_path = os.path.join(DB_DIR, uploaded_file.name)
+            from config import DB_DIR
+            pdf_db_path = os.path.join(DB_DIR, uploaded_file.name)
 
-                vectorstore = get_vectorstore(pdf_db_path)
-                add_documents_to_db(vectorstore, chunks)
+            vectorstore = get_vectorstore(pdf_db_path)
+            add_documents_to_db(vectorstore, chunks)
 
-            st.session_state.pdf_files[uploaded_file.name] = vectorstore
+        st.session_state.pdf_files[uploaded_file.name] = vectorstore
+        if uploaded_file.name not in st.session_state.chat_store:
             st.session_state.chat_store[uploaded_file.name] = []
-            st.session_state.current_pdf = uploaded_file.name
-            st.session_state.vectorstore = vectorstore
-            st.session_state.retriever = get_retriever(vectorstore)
+        st.session_state.current_pdf = uploaded_file.name
+        st.session_state.vectorstore = vectorstore
+        st.session_state.retriever = get_retriever(vectorstore)
 
-            st.success(f"{uploaded_file.name} uploaded successfully!")
-        else:
-            st.session_state.current_pdf = uploaded_file.name
+        st.success(f"{uploaded_file.name} uploaded successfully!")
 
 
 # ---------------- ACTION BUTTONS ----------------
@@ -363,7 +390,7 @@ if st.session_state.current_pdf:
     selected = compare_col.multiselect(
         "Select candidates to compare",
         options=candidate_options,
-        default=st.session_state.selected_candidates or candidate_options[:min(5, len(candidate_options))],
+        default=[],
         key="candidate_selector",
     )
     st.session_state.selected_candidates = selected

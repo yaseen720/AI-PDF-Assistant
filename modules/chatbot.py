@@ -1,8 +1,11 @@
 import os
 from langchain_groq import ChatGroq
+from dotenv import load_dotenv
 
 from config import MODEL_PROVIDER, GROQ_MODEL, TEMPERATURE
 import streamlit as st
+
+load_dotenv()
 
 
 def create_llm():

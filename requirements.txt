@@ -2,13 +2,13 @@ streamlit
 langchain
 langchain-community
 langchain-groq
+langchain-text-splitters
+chromadb
 faiss-cpu
 pypdf
 python-dotenv
 tiktoken
 sentence-transformers
-HuggingFace
-chromadb
 python-docx
 pytesseract
 pillow
